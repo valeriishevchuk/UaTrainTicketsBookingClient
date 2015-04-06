@@ -44,14 +44,13 @@ class Client:
 
 
     def __parse_token(self, html_str):
-        p = re.compile('\\$\\$_=.*~\\[\\];.*\"\"\\)\\(\\)\\)\\(\\);')
-        m = p.search(html_str)
+        pattern = re.compile('\\$\\$_=.*~\\[\\];.*\"\"\\)\\(\\)\\)\\(\\);')
+        match = pattern.search(html_str)
         
-        if not m:
+        if not match:
             raise "Can't find obfuscated tocken data."
         
-        obfuscated = m.group()
-        interceptor = "var token; "
+        obfuscated = match.group()
 
         ctx = execjs.compile("""
             function getToken() {
