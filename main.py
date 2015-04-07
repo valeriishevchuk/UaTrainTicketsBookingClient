@@ -6,4 +6,4 @@ if __name__ == '__main__':
     station2 = { 'id': '2210700'}
     date = '04.22.2015'
 
-    print(c.find_tickets(station1, station2, date))
+    print(c.find_trains(station1, station2, date))

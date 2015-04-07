@@ -82,7 +82,6 @@ class Client:
         payload['station_id_till'] = station2['id']
         payload['date_dep'] = date
         payload['time_dep'] = '00:00'
-        payload['time_dep_till'] = '24:00'
         return payload
 
     
@@ -119,7 +118,7 @@ class Client:
         return stations
 
 
-    def find_tickets(self, station1, station2, date):
+    def find_trains(self, station1, station2, date):
         search_url = 'search/'
         
         full_url = self.__base_address + self.__purchase_url + search_url
