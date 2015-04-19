@@ -3,7 +3,7 @@ import json
 import execjs
 import re
 
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from enum import Enum
 from datetime import datetime
 
@@ -14,9 +14,10 @@ class BadResponseException(Exception):
 
 Station = namedtuple('Station', 'id name')
 Train = namedtuple('Train', 'name, from_station, from_time, till_station, till_time, free_seats')
+CoachInfo = namedtuple('CoachInfo', 'number has_bedding free_places price book_price services c_class type_id')
 
 
-class CarType(Enum):
+class CoachType(Enum):
     suite = ('Suite / first-class sleeper', 'Л')
     coupe = ('Coupe / coach with compartments', 'К')
     berth = ('Berth / third-class sleeper', 'П')
@@ -26,11 +27,25 @@ class CarType(Enum):
 
     @staticmethod
     def type_by_letter(letter):
-        for car_type in CarType:
+        for car_type in CoachType:
             if car_type.value[1] == letter:
                 return car_type
 
         raise 'Can\'t find enum for leter'
+
+
+class CoachService(Enum):
+    tea = ('Tea', 'Ш')
+    double_tea = ('Double-tea', 'Ч')
+    foodset = ('Foodset', 'Х')
+
+    @staticmethod
+    def type_by_letter(letter):
+        for coach_service in CoachService:
+            if coach_service.value[1] == letter:
+                return coach_service
+
+        raise 'Can\'t find CoachService for letter'
 
 
 class Client:
@@ -84,7 +99,29 @@ class Client:
         payload['time_dep'] = '00:00'
         return payload
 
+
+    def __build_payload_for_coaches_info(self, train, coach_type):
+        payload = {}
+        payload['station_id_from'] = train.from_station.id
+        payload['station_id_till'] = train.till_station.id
+        payload['train'] = train.name
+        payload['coach_type'] = coach_type.value[1]
+        payload['date_dep'] = int(train.from_time.timestamp())
+        return payload
     
+    
+    def __build_payload_for_coach_info(self, train, coach_info_json):
+        payload = {}
+        payload['station_id_from'] = train.from_station.id
+        payload['station_id_till'] = train.till_station.id
+        payload['train'] = train.name
+        payload['date_dep'] = int(train.from_time.timestamp())
+        payload['coach_num'] = coach_info_json['num']
+        payload['coach_class'] = coach_info_json['coach_class']
+        payload['coach_type_id'] = coach_info_json['coach_type_id']
+        return payload
+
+
     def __build_headers(self):
         headers = {}
         headers['Cookie'] = self.__cookie_value
@@ -98,7 +135,7 @@ class Client:
     def __build_free_seats_from_data(self, json_data):
         seats = {}
         for type_data in json_data['types']:
-            seats[CarType.type_by_letter(type_data['letter'])] = int(type_data['places'])
+            seats[CoachType.type_by_letter(type_data['letter'])] = int(type_data['places'])
         return seats
 
 
@@ -143,3 +180,39 @@ class Client:
             trains.append(train)
 
         return trains
+
+
+    def coaches_info_for_train(self, train):
+        coaches_info = defaultdict(list) 
+
+        for coach_type in train.free_seats:
+            payload = self.__build_payload_for_coaches_info(train, coach_type)
+            coaches_info_url = 'coaches/'
+            full_url = self.__base_address + self.__purchase_url + coaches_info_url
+            r = requests.post(full_url, data=payload, headers=self.__build_headers())
+            coaches_info_json = json.loads(r.text)['value']['coaches']
+
+            for coach_info_json in coaches_info_json:
+                coach_info_url = 'coach/'
+                full_coach_info_url = self.__base_address + self.__purchase_url + coach_info_url
+                payload = self.__build_payload_for_coach_info(train, coach_info_json)
+                r = requests.post(full_coach_info_url, data=payload, headers=self.__build_headers())
+
+                data = json.loads(r.text)
+                if data['error']:
+                    raise BadResponseException(data['value'])
+
+                coach_info = CoachInfo(
+                            coach_info_json['num'],
+                            coach_info_json['hasBedding'],
+                            list(map(int, data['value']['places'][coach_info_json['coach_class']])),
+                            coach_info_json['prices'][coach_info_json['coach_class']],
+                            coach_info_json['reserve_price'],
+                            [CoachService.type_by_letter(s) for s in coach_info_json['services']],
+                            coach_info_json['coach_class'],
+                            coach_info_json['coach_type_id']
+                        )
+                
+                coaches_info[coach_type].append(coach_info)
+
+        return coaches_info
