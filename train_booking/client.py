@@ -139,36 +139,52 @@ class Client:
         return seats
 
 
-    def find_stations(self, name):
-        station_url = 'station/'
-        full_url = self.__base_address + self.__purchase_url + station_url + name
-        r = requests.post(full_url)
-        data = json.loads(r.text)
+    def __build_coach_info_from_data(self, coach_info_json, free_places_info_json):
+        return CoachInfo(
+                        number=coach_info_json['num'],
+                        has_bedding=coach_info_json['hasBedding'],
+                        free_places=list(map(int, free_places_info_json[coach_info_json['coach_class']])),
+                        price=coach_info_json['prices'][coach_info_json['coach_class']],
+                        book_price=coach_info_json['reserve_price'],
+                        services=[CoachService.type_by_letter(s) for s in coach_info_json['services']],
+                        c_class=coach_info_json['coach_class'],
+                        type_id=coach_info_json['coach_type_id']
+                    )
+
+
+    def __perform_purchase_request(self, sub_url, payload):
+        full_url = self.__base_address + self.__purchase_url + sub_url
+        r = requests.post(full_url, data=payload, headers=self.__build_headers())
+        data = r.json()
 
         if data['error']:
             raise BadResponseException(data['value'])
 
+        return data['value']
+
+
+    def find_stations(self, name):
+        try:
+            response_data = self.__perform_purchase_request('station/' + name, {})
+        except BadResponseException:
+            return []
+
         stations = []
-        for station_data in data['value']:
+        for station_data in response_data:
             stations.append(Station(id=station_data['station_id'], name=station_data['title']))
 
         return stations
 
 
     def find_trains(self, station1, station2, date):
-        search_url = 'search/'
-        
-        full_url = self.__base_address + self.__purchase_url + search_url
-        payload = self.__build_payload_for_search(station1, station2, date)
-        
-        r = requests.post(full_url, data=payload, headers=self.__build_headers())
-        data = json.loads(r.text)
-
-        if data['error']:
-            raise BadResponseException(data['value'])
+        try:
+            payload = self.__build_payload_for_search(station1, station2, date)
+            response_data = self.__perform_purchase_request('search/', payload)
+        except BadResponseException:
+            return []
 
         trains = []
-        for train_data in data['value']:
+        for train_data in response_data:
             train = Train(
                         name=train_data['num'],
                         from_station=Station(id=train_data['from']['station_id'], name=train_data['from']['station']),
@@ -186,33 +202,20 @@ class Client:
         coaches_info = defaultdict(list) 
 
         for coach_type in train.free_seats:
-            payload = self.__build_payload_for_coaches_info(train, coach_type)
-            coaches_info_url = 'coaches/'
-            full_url = self.__base_address + self.__purchase_url + coaches_info_url
-            r = requests.post(full_url, data=payload, headers=self.__build_headers())
-            coaches_info_json = json.loads(r.text)['value']['coaches']
+            try:
+                payload = self.__build_payload_for_coaches_info(train, coach_type)
+                response_data = self.__perform_purchase_request('coaches/', payload)
+            except BadResponseException:
+                continue
+            
+            for coach_info_json in response_data['coaches']:
+                try:
+                    payload = self.__build_payload_for_coach_info(train, coach_info_json)
+                    response_data = self.__perform_purchase_request('coach/', payload)
+                except BadResponseException:
+                    continue
 
-            for coach_info_json in coaches_info_json:
-                coach_info_url = 'coach/'
-                full_coach_info_url = self.__base_address + self.__purchase_url + coach_info_url
-                payload = self.__build_payload_for_coach_info(train, coach_info_json)
-                r = requests.post(full_coach_info_url, data=payload, headers=self.__build_headers())
-
-                data = json.loads(r.text)
-                if data['error']:
-                    raise BadResponseException(data['value'])
-
-                coach_info = CoachInfo(
-                            coach_info_json['num'],
-                            coach_info_json['hasBedding'],
-                            list(map(int, data['value']['places'][coach_info_json['coach_class']])),
-                            coach_info_json['prices'][coach_info_json['coach_class']],
-                            coach_info_json['reserve_price'],
-                            [CoachService.type_by_letter(s) for s in coach_info_json['services']],
-                            coach_info_json['coach_class'],
-                            coach_info_json['coach_type_id']
-                        )
-                
-                coaches_info[coach_type].append(coach_info)
+            coach_info = self.__build_coach_info_from_data(coach_info_json, response_data['places'])
+            coaches_info[coach_type].append(coach_info)
 
         return coaches_info

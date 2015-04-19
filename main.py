@@ -6,7 +6,7 @@ if __name__ == '__main__':
     station2 = { 'id': '2218000'}
     date = '05.20.2015'
 
+    print(c.find_stations('Dubno'))
     trains = c.find_trains(station1, station2, date)
     print(trains[0])
     print(c.coaches_info_for_train(trains[0]))
-
