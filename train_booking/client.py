@@ -14,7 +14,7 @@ class BadResponseException(Exception):
 
 Station = namedtuple('Station', 'id name')
 Train = namedtuple('Train', 'name, from_station, from_time, till_station, till_time, free_seats')
-CoachInfo = namedtuple('CoachInfo', 'number has_bedding free_places price book_price services c_class type_id')
+CoachInfo = namedtuple('CoachInfo', 'number has_bedding free_places book_price services c_class type_id')
 
 
 class CoachType(Enum):
@@ -140,11 +140,14 @@ class Client:
 
 
     def __build_coach_info_from_data(self, coach_info_json, free_places_info_json):
+        places = []
+        for price_cat in coach_info_json['prices']:
+            places.append((tuple(map(int, free_places_info_json[price_cat])), int(coach_info_json['prices'][price_cat])))
+
         return CoachInfo(
                         number=coach_info_json['num'],
                         has_bedding=coach_info_json['hasBedding'],
-                        free_places=list(map(int, free_places_info_json[coach_info_json['coach_class']])),
-                        price=coach_info_json['prices'][coach_info_json['coach_class']],
+                        free_places=places,
                         book_price=coach_info_json['reserve_price'],
                         services=[CoachService.type_by_letter(s) for s in coach_info_json['services']],
                         c_class=coach_info_json['coach_class'],
@@ -207,7 +210,7 @@ class Client:
                 response_data = self.__perform_purchase_request('coaches/', payload)
             except BadResponseException:
                 continue
-            
+
             for coach_info_json in response_data['coaches']:
                 try:
                     payload = self.__build_payload_for_coach_info(train, coach_info_json)
@@ -215,7 +218,7 @@ class Client:
                 except BadResponseException:
                     continue
 
-            coach_info = self.__build_coach_info_from_data(coach_info_json, response_data['places'])
-            coaches_info[coach_type].append(coach_info)
+                coach_info = self.__build_coach_info_from_data(coach_info_json, response_data['places'])
+                coaches_info[coach_type].append(coach_info)
 
         return coaches_info
