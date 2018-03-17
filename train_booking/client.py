@@ -63,7 +63,7 @@ class Client:
         match = pattern.search(html_str)
         
         if not match:
-            raise "Can't find obfuscated tocken data."
+            raise "Can't find obfuscated token data."
         
         obfuscated = match.group()
 
